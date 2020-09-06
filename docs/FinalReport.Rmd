@@ -1,0 +1,26 @@
+---
+title: "Human Activity Recognition - Weight Lifting"
+output: html_notebook
+---
+
+# Introduction
+This study was created as part of the [Pratical Machine Learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome) course. The original data comes from the [Human Activity Recognition Project](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz6XHpkyIF1), from Groupware@LES, and was used in the works of [Vellloso et al](#References).
+
+
+The objective of this study is to use accelerometer data to classify an exercise (Unilateral Dumbbell Biceps Curl) in one of 5 classes:
+
+- Class A: exactly according to the specification.
+- Class B: throwing the elbows to the front.
+- Class C: lifting the dumbbell only halfway.
+- Class D: lowering the dumbbell only halfway.
+- Class E: throwing the hips to the front.
+
+More information about the dataset 
+Read more: 
+
+
+
+# References
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. **Qualitative Activity Recognition of Weight Lifting Exercises.** Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz6XHDaZl9k

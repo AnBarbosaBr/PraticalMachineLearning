@@ -1,0 +1,12 @@
+---
+title: "EDA: Human Activity Recognition - Weight Lifting"
+output: html_notebook
+---
+
+# Introduction
+This exercise was done as part of the course [Pratical Machine Learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome).
+
+The final report, that should be gradded will be in the github pages: **TODO: LINK TO GITHUB PAGES**
+
+
+git add --all
