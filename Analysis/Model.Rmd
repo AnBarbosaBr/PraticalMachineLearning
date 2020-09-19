@@ -1,0 +1,92 @@
+---
+title: "Model"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r, eval=TRUE, message=FALSE, warning=FALSE}
+# Code imports
+library(dplyr)
+
+training_data = readr::read_csv(
+                        here::here("data/pml-training.csv"),
+                        col_types = readr::cols(
+                          .default = readr::col_double(),
+                          user_name = readr::col_factor(),
+                          classe = readr::col_factor(),
+                          raw_timestamp_part_1 = readr::col_integer(),
+                          raw_timestamp_part_2 = readr::col_integer(),
+                          cvtd_timestamp = readr::col_datetime(format = "%d/%m/%Y %H:%M"),
+                          new_window = readr::col_factor()))
+
+
+training_data = training_data[c(selected_vars, "classe")]
+```
+
+## Model 0
+The first model will be created using 70% of the training data. It will be used to calculate the variables importances using a Random Forest
+```{r}
+set.seed(12345)
+
+train_idx  = caret::createDataPartition(training_data$classe, p = 0.7, list=FALSE)
+
+train_control = caret::trainControl(method="cv", number = 10)
+
+model0 = caret::train(classe ~ . , 
+                      data = training_data[train_idx, ], 
+                      method="rf", 
+                      importance = TRUE,
+                      trControl = train_control,
+                      preProcess= c("center","scale"))
+
+model0
+caret::varImp(model0)
+```
+
+Looking on their importances, it seems that those variables contributes the most:
+```{r}
+
+selected_vars <- c("roll_belt", "pitch_belt", "yaw_belt", "magnet_dumbbell_y", "roll_arm", "magnet_dumbbell_z")
+
+model1 = caret::train(classe ~ ., 
+                      data = training_data[train_idx, c(selected_vars, "classe")],
+                      method="rf",
+                      trControl = train_control,
+                      preProcess= c("center","scale"))
+model1
+```
+
+A taxa de erro está boa, embora um pouco otimista. Vamos ver
+The error rate seems good enough with model1, altough they may be a bit optmistic, since the variable selection was done on the same 70% of the data where the cross validation was used.
+
+
+
+## Evaluation on the 30%
+
+```{r}
+predictions_model1 <- predict(model1, 
+                              training_data[-train_idx, c(selected_vars, "classe")])
+caret::confusionMatrix(training_data[-train_idx,"classe"]$classe, predictions_model1)
+```
+
+
+# Test Data
+```{r}
+testing_data = readr::read_csv(
+                        here::here("data/pml-testing.csv"),
+                        col_types = readr::cols(
+                          .default = readr::col_double(),
+                          user_name = readr::col_factor(),
+                          classe = readr::col_factor(),
+                          raw_timestamp_part_1 = readr::col_integer(),
+                          raw_timestamp_part_2 = readr::col_integer(),
+                          cvtd_timestamp = readr::col_datetime(format = "%d/%m/%Y %H:%M"),
+                          new_window = readr::col_factor()))
+
+predictions_test <- predict(model1, testing_data[ , c(selected_vars, "classe")])
+readr::write_csv(predictions_test, here::here("outputs/test_results.csv"))
+```
+
+

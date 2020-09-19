@@ -1,0 +1,77 @@
+---
+title: "Features Selection"
+output: html_notebook
+---
+
+```{r, eval=TRUE, message=FALSE, warning=FALSE}
+# Code imports
+library(dplyr)
+
+training_data = readr::read_csv(
+                        here::here("data/pml-training.csv"),
+                        col_types = readr::cols(
+                          .default = readr::col_double(),
+                          user_name = readr::col_factor(),
+                          classe = readr::col_factor(),
+                          raw_timestamp_part_1 = readr::col_integer(),
+                          raw_timestamp_part_2 = readr::col_integer(),
+                          cvtd_timestamp = readr::col_datetime(format = "%d/%m/%Y %H:%M"),
+                          new_window = readr::col_factor()))
+```
+
+After the EDA, I can already remove some columns:
+```{r}
+all_variables <- names(training_data)
+
+id_variables <- c("X1", "user_name") # Username wont help creating a model that generalizes well.
+
+time_variables <- c("raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+
+aggregation_preffix <-  "kurtosis|skewness|max|min|amplitude|var|avg|std"
+aggregation_variables <- grep(aggregation_preffix, all_variables)
+aggregation_variables <- all_variables[aggregation_variables]
+
+to_remove_variables <- c(id_variables, time_variables, aggregation_variables)
+keep_variables <- setdiff(all_variables, to_remove_variables)
+
+training_data <- training_data[keep_variables]
+```
+```{r}
+caret::nearZeroVar(training_data, saveMetrics=TRUE)
+```
+
+```{r}
+correlation_matrix <- cor(training_data[-class_column_index])
+caret::findCorrelation(correlation_matrix, names=TRUE)
+```
+
+### Variables Importance
+```{r}
+set.seed(12345)
+
+train_control = caret::trainControl(method="cv", number = 10)
+
+model <- caret::train(classe ~ . , 
+                      data = training_data, 
+                      method="rf", 
+                      importance=TRUE,
+                      trControl = train_control,
+                      preProcess=c("center","scale"))
+saveRDS(model, here::here("data/rf_model.rds"))
+model
+```
+
+```{r}
+caret::varImp(model)
+```
+It seems that roll_belt is the most important feature for distinguish between B, C and D. 
+```{r}
+simpler_model = caret::train(classe ~ roll_belt + pitch_belt + yaw_belt + magnet_dumbbell_y + roll_arm + magnet_dumbbell_z, 
+                      data = training_data, 
+                      method="nb", 
+                      trControl = train_control,
+                      preProcess=c("center","scale"))
+
+simpler_model
+```
+

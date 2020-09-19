@@ -1,12 +1,275 @@
 ---
-title: "EDA: Human Activity Recognition - Weight Lifting"
-output: html_notebook
+title: 'EDA: Human Activity Recognition - Weight Lifting'
+output:
+  html_document:
+    df_print: paged
+    toc: TRUE
 ---
+```{r, eval=TRUE, message=FALSE, warning=FALSE}
+# Code imports
+library(dplyr)
+```
 
 # Introduction
-This exercise was done as part of the course [Pratical Machine Learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome).
+This EDA was done as a way to help me in the project of the course [Pratical Machine Learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome).
 
-The final report, that should be gradded will be in the github pages: **TODO: LINK TO GITHUB PAGES**
+The final report, that should be gradded, can be viewed be at https://anbarbosabr.github.io/PraticalMachineLearning/
 
 
-git add --all
+# Objectives
+The goal of the project is, as stated on the Coursera's Project Instructions, to identify how a weight lifting exercise was done using accelerometers data.
+
+Looking at the webside of the source of the data, [Groupware@LES website](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises), I could identify that the exercise that is being executed is the *Unilateral Dumbbell Biceps Curl*.
+
+Also, the classes are:
+
+- Class A: exactly according to the specification.
+- Class B: throwing the elbows to the front.
+- Class C: lifting the dumbbell only halfway.
+- Class D: lowering the dumbbell only halfway.
+- Class E: throwing the hips to the front.
+
+
+If you do not know what kind of exercise it is, neither did I, so a quickly google helped me:
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/gsN2z8UbzuM" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+
+
+The data was collected using sensors at the users glove, armband, lumbar belt and even on the dumbbell([Veloso et all, 2013](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)):
+
+<img src=http://groupware.les.inf.puc-rio.br/static/WLE/on-body-sensing-schema.png alt="Body Sensors Schema">
+
+
+It´s important to note that, in this project, the provided test dataset has only 20 rows. 
+
+
+PS: It came to my mind that, since the test data has only 20 observations and I am not supposed to consider this data as a time series.
+
+
+# The Data EDA
+For the EDA, I will use only the training data provided by John Hopkins.
+```{r, message=FALSE, warning=FALSE}
+training_data = readr::read_csv(
+                        here::here("data/pml-training.csv"),
+                        col_types = readr::cols(
+                          .default = readr::col_double(),
+                          user_name = readr::col_character(),
+                          classe = readr::col_factor(),
+                          raw_timestamp_part_1 = readr::col_integer(),
+                          raw_timestamp_part_2 = readr::col_integer(),
+                          cvtd_timestamp = readr::col_datetime(format = "%d/%m/%Y %H:%M"),
+                          new_window = readr::col_character()))
+```
+It contains `r nrow(training_data)` rows and `r ncol(training_data)`. That´s a lot of data! Which columns do we have?
+```{r}
+dplyr::glimpse(training_data)
+```
+
+Also, let´s see if there was any problem with the end of the file:
+```{r}
+knitr::kable(tail(training_data))
+```
+
+This quick view already showed me that:
+
+1. I can discart the X1 variable, which is an row id
+2. Most of the variables are numeric
+3. There is some rule for the naming of the sensors variables, that I need to understand better.
+4. There are tree timestamp variables.
+5. There are a lot of missing values on some of the variables, mainly on those that seems to be aggregated values (avg, var, stddev, amplitude...). 
+6. There are two window variables, I may use then instead of creating my own windows. Probably the aggregated values are calculated by using these windows.
+
+## Target
+The target variable is "classe". By the description of the dataset, I expect the classe variable to have aproximatelly the same number of rows for each class:
+```{r}
+plot(training_data$classe)
+```
+
+ 
+## Variables
+That said, let´s start analysing the features available and analyse them more carefully. 
+### Profile
+First I´m listing the "profile" variables, those that are not measured by sensors or that are a measure of time.
+```{r}
+# The "profile" variables
+profile_variables = names(training_data)[c(1:7, 160)]
+profile_variables
+```
+As already said:
+- *X1*: is just an ID, so it´s not important.
+- *user_name*: may be important to capture the differences between the subjects and try to remove some of the noise, but will not help us to make new predictions.
+- *raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp*: timestamp variables
+- *classe*: The class variable, from A to E.
+
+```{r}
+# Counting distinct values for those variables
+sapply(training_data[profile_variables], function(x) length(unique(x)))
+```
+We can confirm that X1 is an ID, it has one unique value for each row in the data.
+We have all 6 subjects.
+new window is a boolean(yes/no)
+We have 858 windows of time, approximately one for each `r round(nrow(training_data)/858, 1)` rows. 
+
+
+### Sensors
+Since there are 152 sensor related variables, it will help to understand them. 
+
+Here is the list of all variables:
+```{r}
+sensors_variables = names(training_data)[-c(1:7, 160)]
+sensors_variables
+```
+
+It seems that the sensors are divided in:
+
+- belt
+- arm
+- forearm
+- dumbbel
+
+Each one has measures of:
+
+- roll
+- pitch
+- yaw
+- total_accel (for belt)/accel (for arm, forearm and dumbbell)
+- accel_<body_part>_x, accel_<body_part>_y, accel_<body_part>_z
+- gyros_<body_part>_x, gyros_<body_part>_y, gyros_<body_part>_z
+- magnet_<body_part>_x, magnet_<body_part>_z
+
+And there are aggregations
+
+- kurtosis: for roll, pitch, yaw 
+- skewness: for roll, pitch(except for belt), yaw. Note that there is a skewness_roll_belt.1 column, and there is NOT a skewness_pitch_belt. This seems like a case of mislabeled column, and the skewness_roll_belt.1 should be skewness_pitch_belt, but I wont make any assumptions unless I can confirm it. (I can confront with original dataset, if this variable seems useful.)
+- max: for roll, pitch, yaw
+- min: for roll, pitch, yaw
+- amplitude: for roll, pitch, yaw
+- var: for roll, pitch, yaw, total_accel
+- avg: for roll, pitch, yaw
+- std: for roll, pitch, yaw
+
+```{r}
+sensors_variables[grep("belt", sensors_variables)]
+```
+
+
+```{r}
+# By sensor type
+belt_variables = sensors_variables[grep("belt", sensors_variables)]
+arm_variables = sensors_variables[grep("_arm", sensors_variables, perl = TRUE)]
+forearm_variables = sensors_variables[grep("forearm", sensors_variables)]
+dumbbell_variables = sensors_variables[grep("dumbbell", sensors_variables)]
+
+data.frame(sort(belt_variables), sort(arm_variables), sort(forearm_variables), sort(dumbbell_variables))
+```
+
+
+```{r}
+# By Measure Type, note that some variables has pitch mispelled as picth.
+roll_variables = sensors_variables[grep("roll", sensors_variables)]
+pitch_variables = sensors_variables[grep("pitch|picth", sensors_variables)]
+yaw_variables = sensors_variables[grep("yaw", sensors_variables)]
+
+c(length(roll_variables), length(pitch_variables), length(yaw_variables))
+```
+The number of roll variables, pitch variables and yaw variables reinforces the hipotesis that one "pitch" variable was mislabeled as a "roll" variable. 
+
+```{r}
+# By Measure Type
+accel_variables = sensors_variables[grep("accel", sensors_variables)]
+gyros_variables = sensors_variables[grep("gyros", sensors_variables)]
+magnet_variables = sensors_variables[grep("magnet", sensors_variables)]
+
+cbind(sort(accel_variables), c(sort(gyros_variables), rep(NA, 8)), c(sort(magnet_variables), rep(NA, 8)))
+# sum(c(length(accel_variables), length(gyros_variables), length(magnet_variables)))
+```
+We have accel in the x, y and z coordinates, and also a total_accel. The total accel is the magnitude of the acceleration vector: $\sqrt{x^2+y^2+z^2}$. Note that we also have the var of the accelerations. 
+
+```{r}
+# By Aggregation
+kurtosis_variables = sensors_variables[grep("kurtosis", sensors_variables)]
+skewness_variables = sensors_variables[grep("skewness", sensors_variables)]
+max_variables = sensors_variables[grep("max", sensors_variables)]
+min_variables = sensors_variables[grep("min", sensors_variables)]
+amplitude_variables = sensors_variables[grep("amplitude", sensors_variables)]
+var_variables = sensors_variables[grep("var", sensors_variables)]
+avg_variables = sensors_variables[grep("avg", sensors_variables)]
+std_variables = sensors_variables[grep("std", sensors_variables)]
+
+aggregated_variables = c(kurtosis_variables, skewness_variables, max_variables, min_variables, amplitude_variables, var_variables, avg_variables, std_variables)
+
+c(length(kurtosis_variables), length(skewness_variables), length(max_variables), length(min_variables), length(amplitude_variables), length(var_variables), length(avg_variables), length(std_variables))
+```
+As expected, the only kind of aggregation that has more variables than the others is the variance.
+
+
+
+
+
+
+#### Timestamps
+
+    **Since I won´t be able to use the time on the predictions, I will just drop those columns.**
+
+We have 3 timestamps columns. The first two are timestamp integers, and the last one a character. My theory is that the part1 timestamps are of the kind "seconds from epoch", and the second part is the milliseconds. The date timestamp is only a convenient way to store the time, but can achieve only a minute precision.
+```{r}
+timestamp_variables = profile_variables[grep("timestamp", profile_variables)]
+summary(training_data[timestamp_variables])
+```
+Since the raw_timestamp_part_2 goes from (almost) 0 to (almost) 999.999, i will assume that it is about the milliseconds. The test below also shows that the raw_timestamp_part_1 is really the [Linux Epoch](https://en.wikipedia.org/wiki/Unix_time), and encodes the time in seconds since 01.01.1970. 
+```{r}
+part1.timestamp <- training_data$raw_timestamp_part_1
+part1.datetime <- lubridate::as_datetime(part1.timestamp)
+head(data.frame(training_data$cvtd_timestamp, part1.datetime))
+```
+
+#### Windows
+Let´s see how many rows we have per window of time:
+```{r}
+rows_per_window = training_data %>% group_by(num_window) %>% summarise(contagem = n())
+hist(rows_per_window$contagem)
+```
+
+## Pre-Selected Variables
+
+```{r}
+all_variables <- names(training_data)
+
+id_variables <- c("X1", "user_name") # Username wont help creating a model that generalizes well.
+
+time_variables <- c("raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+
+aggregation_preffix <-  "kurtosis|skewness|max|min|amplitude|var|avg|std"
+aggregation_variables <- grep(aggregation_preffix, all_variables)
+aggregation_variables <- all_variables[aggregation_variables]
+
+to_remove_variables <- c(id_variables, time_variables, aggregation_variables)
+keep_variables <- setdiff(all_variables, to_remove_variables)
+
+training_data <- training_data[keep_variables]
+```
+
+```{r message=FALSE, warning=FALSE}
+# Centering and scaling before ploting:
+class_column_index = 53
+x_data = training_data[-class_column_index]
+prepro = caret::preProcess(x_data, c("center","scale"))
+scaled_data <- predict(prepro, x_data)
+
+# GGally::ggpairs(scaled_data, ggplot2::aes(color = training_data$classe), alpha = 0.4)
+for (variable in names(scaled_data)){
+  p = ggplot2::ggplot(scaled_data, ggplot2::aes_string(x=variable))
+  p = p + ggplot2::geom_density(ggplot2::aes(fill=training_data$classe), alpha = 0.3)
+  p = p + ggplot2::ggtitle(variable)
+  print(p)
+}
+```
+
+### Missings
+There are any missings, besides the aggregated variables:
+
+```{r}
+sapply(training_data, function(x) {sum(is.na(x))})
+```
+

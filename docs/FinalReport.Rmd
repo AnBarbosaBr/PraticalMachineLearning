@@ -1,13 +1,25 @@
 ---
 title: "Human Activity Recognition - Weight Lifting"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 # Introduction
-This study was created as part of the [Pratical Machine Learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome) course. The original data comes from the [Human Activity Recognition Project](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz6XHpkyIF1), from Groupware@LES, and was used in the works of [Vellloso et al](#References).
+
+This study was created as part of the [Pratical Machine Learning](https://www.coursera.org/learn/practical-machine-learning/home/welcome) course. The original data comes from the [Human Activity Recognition Project](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz6XHpkyIF1)/Groupware@LES, and was used in the works of [Vellloso et al](#References).
 
 
-The objective of this study is to use accelerometer data to classify an exercise (Unilateral Dumbbell Biceps Curl) in one of 5 classes:
+## Objectives
+As stated on the Coursera's Project Instructions, the goal of the project is to identify how a weight lifting exercise was done using accelerometers data. 
+
+It´s important to note that, in this project, the provided test dataset has only 20 rows, and the format of the dataset make it impossible to make 20 time based predictions with only 20 rows of data. 
+
+
+## Data Overview
+Looking at the webside of the source of the data, [Groupware@LES website](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises), I could identify that the exercise that is being executed is the *Unilateral Dumbbell Biceps Curl*.
+
+Also, the classes are:
 
 - Class A: exactly according to the specification.
 - Class B: throwing the elbows to the front.
@@ -15,9 +27,157 @@ The objective of this study is to use accelerometer data to classify an exercise
 - Class D: lowering the dumbbell only halfway.
 - Class E: throwing the hips to the front.
 
-More information about the dataset 
-Read more: 
 
+If you do not know what kind of exercise it is, neither did I, so a quickly google helped me:
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/gsN2z8UbzuM" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+
+
+The data was collected using sensors at the users glove, armband, lumbar belt and even on the dumbbell([Veloso et all, 2013](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)):
+
+<img src=http://groupware.les.inf.puc-rio.br/static/WLE/on-body-sensing-schema.png alt="Body Sensors Schema">
+
+
+
+
+
+# EDA
+For the EDA, I will use only the training data provided by John Hopkins.
+```{r, message=FALSE, warning=FALSE}
+training_data = readr::read_csv(
+                        here::here("data/pml-training.csv"),
+                        col_types = readr::cols(
+                          .default = readr::col_double(),
+                          user_name = readr::col_character(),
+                          classe = readr::col_factor(),
+                          raw_timestamp_part_1 = readr::col_integer(),
+                          raw_timestamp_part_2 = readr::col_integer(),
+                          cvtd_timestamp = readr::col_datetime(format = "%d/%m/%Y %H:%M"),
+                          new_window = readr::col_character()))
+```
+
+It contains `r nrow(training_data)` rows and `r ncol(training_data)`. I looked at the date a bit and what cough my attention was the high number of missings in some columns. Those are columns that have aggregated values, probably to be used with the windows if we where to make prediction using the time.  Since I cannot be sure if the test data will have those variables or not, I will drop them.
+```{r}
+missings = sapply(training_data, function(x) sum(is.na(x)))
+remove_cols = missings[missings>0]
+remove_cols
+```
+
+Also, I will ignore the time related columns, since they won't be usefull at all for this project (they could be REALLY important if this were a real case scenario). Another column that I´m ignoring is the user_name and the "X1"(index).
+
+
+The remaining columns can be divided by sensor and type of measure:
+### Sensors
+- belt
+- arm
+- forearm
+- dumbbel
+
+### Measures
+- roll
+- pitch
+- yaw
+- total_accel (for belt)/accel (for arm, forearm and dumbbell)
+- accel_<body_part>_x, accel_<body_part>_y, accel_<body_part>_z
+- gyros_<body_part>_x, gyros_<body_part>_y, gyros_<body_part>_z
+- magnet_<body_part>_x, magnet_<body_part>_z
+
+```{r}
+remove_cols = c(names(remove_cols), "raw_timestamp_part_1", "raw_timestamp_part_2", 
+"cvtd_timestamp","new_window", "num_window", "X1", "user_name")
+remaining_cols = setdiff(names(training_data), remove_cols)
+remaining_cols
+```
+
+## The target
+The target are the classes, we need to check if there is any inbalance between them. A visual inspecion shows that it´s not the case.
+```{r}
+plot(training_data$classe)
+```
+
+# Preparing the data
+```{r}
+training_data <- dplyr::select(training_data, -tidyselect::all_of(remove_cols))
+```
+
+# Models and variable selection
+## Split training data
+The candidate models will be created using 70% of the training data. 
+```{r}
+set.seed(12345)
+
+train_idx  = caret::createDataPartition(training_data$classe, p = 0.7, list=FALSE)
+```
+
+## Model 0
+This model will be used to calculate the variables importances using a Random Forest
+```{r model0, cache=TRUE, warning=FALSE, message=FALSE}
+
+train_control = caret::trainControl(method="cv", number = 10)
+
+model0 = caret::train(classe ~ . , 
+                      data = training_data[train_idx, ], 
+                      method="rf", 
+                      importance = TRUE,
+                      trControl = train_control,
+                      preProcess= c("center","scale"))
+
+model0
+```
+
+```{r}
+caret::varImp(model0)
+```
+
+
+Looking on their importances, it seems that those variables contributes the most are:
+```{r}
+selected_vars <- c("roll_belt", "pitch_belt", "yaw_belt", "magnet_dumbbell_y", "pitch_forearm", "magnet_dumbbell_z")
+```
+
+
+## Model 1
+Created using only the most important variables.
+```{r model1, cache=TRUE, warning=FALSE, message=FALSE}
+model1 = caret::train(classe ~ ., 
+                      data = training_data[train_idx, c(selected_vars, "classe")],
+                      method="rf",
+                      trControl = train_control,
+                      preProcess= c("center","scale"))
+model1
+```
+
+This error rate seems good enough for me. The caret package calculates this error using the cross validation, as set on the train_control variable. Let´s see my model accuracy on the rest of the training data. 
+```{r}
+train_remaining = training_data[-train_idx, ]
+
+test_predict_m1 = predict(model1, train_remaining)
+real_values  = train_remaining$classe
+
+caret::confusionMatrix(test_predict_m1, real_values)$overall
+```
+Yeah, it´s pretty good. And I managed to have this accuracy using only 6 variables. I could, probably, use more time and make a better model, adding some other variables or creating new features but, for this project, I really only need the model to have more than 70% accuracy on the test data. Since it´s already well above this threshold, I will stick with this model. 
+
+# Test Data
+```{r, warning=FALSE, message=FALSE}
+test_data = readr::read_csv(
+                        here::here("data/pml-testing.csv"),
+                        col_types = readr::cols(
+                          .default = readr::col_double(),
+                          user_name = readr::col_character(),
+                          classe = readr::col_factor(),
+                          raw_timestamp_part_1 = readr::col_integer(),
+                          raw_timestamp_part_2 = readr::col_integer(),
+                          cvtd_timestamp = readr::col_datetime(format = "%d/%m/%Y %H:%M"),
+                          new_window = readr::col_character()))
+```
+
+```{r}
+test_predictions <- predict(model1, test_data)
+
+cbind(1:20, as.character(test_predictions))
+```
 
 
 # References
